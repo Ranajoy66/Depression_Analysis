@@ -1,52 +1,67 @@
 import pandas as pd
 import os
+import joblib
+
 from sklearn.model_selection import train_test_split
 from sklearn.linear_model import LogisticRegression
 from sklearn.feature_extraction.text import TfidfVectorizer
-from sklearn.metrics import accuracy_score
-import joblib
+from sklearn.metrics import accuracy_score, classification_report, confusion_matrix
 
-from modules.preprocessing import clean_text
+from preprocessing import clean_text
 
-def run_model():
-    # Load dataset
-    df = pd.read_csv('depression_analysis_dataset.csv')
+# Step 1: Load or clean dataset
+CLEANED_FILE = "cleaned_dataset.csv"
+RAW_FILE = "depression_analysis_dataset_100000.csv"
 
-    # Clean the text
+if os.path.exists(CLEANED_FILE):
+    df = pd.read_csv(CLEANED_FILE)
+    print("✅ Loaded cleaned dataset.")
+else:
+    df = pd.read_csv(RAW_FILE)
     df['cleaned'] = df['text'].apply(clean_text)
+    df.to_csv(CLEANED_FILE, index=False)
+    print("✅ Cleaned and saved dataset.")
 
-    # TF-IDF vectorization
-    tfidf = TfidfVectorizer(max_features=1000, min_df=1, max_df=0.9)
-    X = tfidf.fit_transform(df['cleaned'])
-    y = df['label']
+# Step 2: Show class balance
+print("\n📊 Class Distribution:")
+print(df['label'].value_counts())
 
-    # Split data into training and test sets
-    X_train, X_test, y_train, y_test = train_test_split(
-    X, y, test_size=0.2, stratify=y, random_state=42)
+# Drop duplicates and shuffle
+df.drop_duplicates(subset='cleaned', inplace=True)
+df = df.sample(frac=1, random_state=42).reset_index(drop=True)
 
-    # Train the model
-    model = LogisticRegression(C=0.1, max_iter=1000)
-    model.fit(X_train, y_train)
+# Step 3: TF-IDF
+tfidf = TfidfVectorizer(max_features=200, min_df=5, max_df=0.8)
+X = tfidf.fit_transform(df['cleaned'])
+y = df['label']
 
-    # Predict on test set
-    y_pred = model.predict(X_test)
+# Step 4: Train-Test Split
+X_train, X_test, y_train, y_test = train_test_split(
+    X, y, test_size=0.4, stratify=y, random_state=42
+)
 
-    # Calculate accuracy
-    accuracy = accuracy_score(y_test, y_pred)
-    accuracy_percent = round(accuracy * 100, 2)
+# Step 5: Train model
+model = LogisticRegression(C=0.1, max_iter=300)
+model.fit(X_train, y_train)
 
-    # ✅ Print in terminal
-    print(f"✅ Model Accuracy: {accuracy_percent}%")
+# Step 6: Evaluate model
+y_pred = model.predict(X_test)
+accuracy = accuracy_score(y_test, y_pred)
+print(f"\n✅ Model Accuracy: {round(accuracy * 100, 2)}%")
 
-    # Save accuracy to a text file
-    # with open('models/accuracy.txt', 'w') as f:
-    #     f.write(str(round(accuracy * 100, 2)))  # Save as percentage
+# Step 7: Classification Report
+print("\n📄 Classification Report:")
+print(classification_report(y_test, y_pred))
 
-    # Ensure 'models' folder exists
+# Step 8: Confusion Matrix
+print("🧾 Confusion Matrix:")
+print(confusion_matrix(y_test, y_pred))
+
+# Step 9: Save model only if not overfitting
+if accuracy >= 0.98:
+    print("\n⚠️ Warning: Accuracy too high — possible overfitting. Model not saved.")
+else:
     os.makedirs('models', exist_ok=True)
-
-    # Save the model and vectorizer
     joblib.dump(model, 'models/model.pkl')
     joblib.dump(tfidf, 'models/vectorizer.pkl')
-
-    print("✅ Model and vectorizer saved successfully.")
+    print("\n💾 Model and vectorizer saved.")
